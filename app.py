@@ -1,190 +1,165 @@
 import json
 from pathlib import Path
-import joblib, pandas as pd, plotly.express as px, plotly.graph_objects as go, streamlit as st
+import joblib, numpy as np, pandas as pd, plotly.express as px, plotly.graph_objects as go, streamlit as st
+from features import build_X, seg_features, OCC, CH, TT
 
 B = Path(__file__).parent
-st.set_page_config(page_title="Cerita Data Transaksi Bank", page_icon="🏦", layout="wide")
+st.set_page_config(page_title="Segmentasi Nasabah Bank", page_icon="🏦", layout="wide")
+NAMES = ["Profesional Produktif", "Senior Mapan", "Muda Berkembang", "Pengeluaran Agresif"]
+COL = dict(zip(NAMES, ["#2a9d8f", "#264653", "#e9c46a", "#e76f51"]))
+INFO = {
+    "Profesional Produktif": ("Usia produktif dengan saldo terbesar. Dokter dan insinyur mendominasi.",
+                              "Tawarkan investasi, deposito, dan kartu premium. Dorong layanan digital karena mereka paling siap menabung lebih banyak."),
+    "Senior Mapan": ("Nasabah paling senior, saldo besar, pengeluaran kecil dibanding saldo. Didominasi pensiunan dan dokter senior.",
+                     "Fokus pada keamanan dan perencanaan: tabungan berjangka, asuransi, dan layanan cabang yang nyaman."),
+    "Muda Berkembang": ("Mayoritas mahasiswa dengan saldo kecil tetapi transaksi masih terkendali.",
+                        "Rekrut sejak dini: rekening tabungan pemula, edukasi literasi keuangan, dan fitur target menabung."),
+    "Pengeluaran Agresif": ("Kelompok kecil dengan nominal transaksi besar dibanding saldo, sebagian besar mahasiswa.",
+                            "Pantau dengan notifikasi limit, tawarkan produk cicilan atau dana darurat yang terukur, dan layani sebelum muncul masalah likuiditas."),
+}
 
 
 @st.cache_data
-def load_story():
-    return json.load(open(B / "story.json", encoding="utf-8"))
+def load():
+    return pd.read_csv(B / "data_segmentasi.csv"), json.load(open(B / "meta.json", encoding="utf-8"))
 
 
 @st.cache_resource
-def load_models():
+def models():
     return joblib.load(B / "models.joblib")
 
 
-S, M = load_story(), load_models()
-CL = {"0": "#4c78a8", "1": "#f58518"}
-occ = pd.DataFrame(S["occupation"]).rename(columns={"CustomerOccupation": "Profesi"})
-pct = lambda a, b: abs(a - b) / ((a + b) / 2) * 100
-bc = S["by_cluster"]
+df, META = load(); MD = models()
+df["Segment"] = pd.Categorical(df.Segment, NAMES)
+n = len(df); share = df.Segment.value_counts(normalize=True).reindex(NAMES) * 100
+bal_share = df.groupby("Segment", observed=True).AccountBalance.sum().reindex(NAMES) / df.AccountBalance.sum() * 100
+vol_share = df.groupby("Segment", observed=True).TransactionAmount.sum().reindex(NAMES) / df.TransactionAmount.sum() * 100
+prof = df.groupby("Segment", observed=True).agg(n=("Segment", "size"), usia=("CustomerAge", "mean"), saldo=("AccountBalance", "median"),
+                                                nominal=("TransactionAmount", "mean"), rasio=("Ratio", "median"), durasi=("TransactionDuration", "mean")).reindex(NAMES)
+pie = lambda t: dict(title=t)
 
-st.title("🏦 Cerita di Balik Data Transaksi Bank")
-st.caption("Dari data mentah → clustering → klasifikasi. Setiap bagian ditulis sebagai temuan, bukan sekadar angka.")
-tab1, tab2, tab3 = st.tabs(["📖 Cerita Data", "🔮 Inferensi Cluster", "🤖 Evaluasi Model"])
+st.title("🏦 Segmentasi Nasabah Bank: Siapa Mereka dan Bagaimana Melayaninya")
+st.caption(f"{n:,} profil nasabah dikelompokkan menjadi 4 segmen berdasarkan **usia, saldo, dan intensitas pengeluaran** (nominal ÷ saldo).")
+tab1, tab2, tab3 = st.tabs(["📊 Insight Segmen", "🔮 Prediksi Segmen", "🤖 Model & Metodologi"])
 
-# ======================= CERITA =======================
+# =============== INSIGHT ===============
 with tab1:
+    mapan = ["Profesional Produktif", "Senior Mapan"]; muda = ["Muda Berkembang", "Pengeluaran Agresif"]
     k = st.columns(4)
-    k[0].metric("Transaksi mentah", f"{S['n_raw']:,}")
-    k[1].metric("Dipakai untuk model", f"{S['n_final']:,}", f"-{(1 - S['n_final'] / S['n_raw']):.0%}", delta_color="off")
-    k[2].metric("Akun unik", f"{S['n_accounts']:,}")
-    k[3].metric("Silhouette (notebook)", f"{S['silhouette']:.2f}")
-    st.markdown("> **Ringkasan cerita:** ada pola nyata di data (profesi menentukan usia, saldo, dan tekanan finansial), "
-                "tetapi dua cluster yang dihasilkan tidak menangkapnya. Cluster itu ternyata hanya membagi **daftar kota** secara alfabetis, "
-                "dan klasifikasi 100% hanya mengulang aturan itu.")
+    k[0].metric("Profil nasabah", f"{n:,}")
+    k[1].metric("Segmen", "4")
+    k[2].metric("Saldo di 2 segmen mapan", f"{bal_share[mapan].sum():.0f}%")
+    k[3].metric("Volume transaksi segmen muda", f"{vol_share[muda].sum():.0f}%")
+    st.markdown(f"> **Inti ceritanya:** nasabah bank ini terbelah oleh **fase hidup**. Dua segmen mapan ({share[mapan].sum():.0f}% nasabah) menyimpan {bal_share[mapan].sum():.0f}% saldo, "
+                f"sementara dua segmen muda ({share[muda].sum():.0f}% nasabah) hanya menyimpan {bal_share[muda].sum():.0f}% saldo, tetapi menyumbang {vol_share[muda].sum():.0f}% volume transaksi.")
 
-    # ---- Bab 1
-    st.header("1️⃣ Hampir seperempat data hilang sebelum model dilatih")
-    a, b = st.columns([3, 2])
-    steps = ["Data mentah", "Hapus nilai kosong", "Hapus duplikat", "Hapus outlier (IQR)"]
-    vals = [S["n_raw"], S["n_raw"] - S["null_rows"], S["n_dedup"], S["n_final"]]
-    a.plotly_chart(px.bar(x=steps, y=vals, text=vals, labels={"x": "", "y": "Jumlah baris"}, title="Jumlah baris di tiap tahap pembersihan"),
-                   width="stretch")
-    with b:
-        st.markdown(f"Dari **{S['n_raw']:,}** baris, **{S['null_rows']}** punya nilai kosong, **{S['dup_rows']}** duplikat, dan **{S['n_outlier']}** dibuang sebagai outlier. "
-                    f"Tersisa **{S['n_final']:,}** baris ({S['n_final'] / S['n_raw']:.0%}).")
-        st.info(f"Perhatikan angka ini: dari {S['n_outlier']} outlier, **{S['login_removed']}** dibuang karena `LoginAttempts` > 1. Kita kembali ke ini di bab 3.")
+    st.header("1️⃣ Peta pasar: empat kelompok nasabah menurut usia dan saldo")
+    fig = px.scatter(df, x="CustomerAge", y="AccountBalance", color="Segment", log_y=True, opacity=.65, category_orders={"Segment": NAMES},
+                     color_discrete_map=COL, labels={"CustomerAge": "Usia", "AccountBalance": "Saldo (skala log)"}, height=480)
+    st.plotly_chart(fig, width="stretch")
+    st.markdown(f"Semakin tua nasabah, semakin besar saldonya. Namun ada dua kelompok muda yang berbeda: **Muda Berkembang** (rata-rata {prof.usia['Muda Berkembang']:.0f} tahun, saldo median {prof.saldo['Muda Berkembang']:,.0f}) "
+                f"dan **Pengeluaran Agresif** ({prof.usia['Pengeluaran Agresif']:.0f} tahun, saldo median hanya {prof.saldo['Pengeluaran Agresif']:,.0f}).")
 
-    # ---- Bab 2
-    st.header("2️⃣ Profesi nasabah menceritakan tiga kehidupan finansial yang berbeda")
-    st_ = occ.set_index("Profesi")
-    mult = st_.loc["Student", "rasio_median"] / st_.loc["Doctor", "rasio_median"]
-    c = st.columns(3)
-    c[0].plotly_chart(px.bar(occ, x="Profesi", y="umur", color="Profesi", title="Rata-rata usia", labels={"umur": "tahun"}).update_layout(showlegend=False), width="stretch")
-    c[1].plotly_chart(px.bar(occ, x="Profesi", y="saldo", color="Profesi", title="Rata-rata saldo akun", labels={"saldo": "saldo"}).update_layout(showlegend=False), width="stretch")
-    c[2].plotly_chart(px.bar(occ, x="Profesi", y="rasio_median", color="Profesi", title="Nominal transaksi ÷ saldo (median)", labels={"rasio_median": "rasio"}).update_layout(showlegend=False), width="stretch")
-    st.markdown(f"Empat profesi tersebar merata ({', '.join(f'{r.Profesi} {int(r.n)}' for r in occ.itertuples())}), tetapi hidupnya jauh berbeda. "
-                f"**Dokter** (rata-rata {st_.loc['Doctor', 'umur']:.0f} tahun) menyimpan saldo ±{st_.loc['Doctor', 'saldo']:,.0f}, sedangkan **mahasiswa** (±{st_.loc['Student', 'umur']:.0f} tahun) hanya ±{st_.loc['Student', 'saldo']:,.0f}. "
-                f"Padahal nominal transaksi mahasiswa justru yang tertinggi ({st_.loc['Student', 'nominal']:.0f}). Akibatnya, sekali transaksi mahasiswa memakai porsi saldo **±{mult:.1f}× lebih besar** daripada dokter.")
-    st.success("**Insight bisnis:** inilah segmentasi yang bermakna. Mahasiswa adalah kelompok paling rentan secara arus kas, dan pemantauannya sebaiknya memakai rasio nominal terhadap saldo, bukan nominal saja.")
+    st.header("2️⃣ Kenali keempat segmen")
+    cols = st.columns(4)
+    for c, nm in zip(cols, NAMES):
+        top = df[df.Segment == nm].CustomerOccupation.value_counts(normalize=True)
+        with c.container(border=True):
+            st.markdown(f"### {nm}")
+            st.markdown(f"**{prof.n[nm]:,}** nasabah ({share[nm]:.0f}%)")
+            st.markdown(f"- Usia rata-rata: **{prof.usia[nm]:.0f}** th\n- Saldo median: **{prof.saldo[nm]:,.0f}**\n- Nominal rata-rata: **{prof.nominal[nm]:,.0f}**\n- Profesi dominan: **{top.index[0]}** ({top.iloc[0]:.0%})")
+            st.caption(INFO[nm][0])
+    z = prof[["usia", "saldo", "nominal", "rasio", "durasi"]]; z = (z - z.mean()) / z.std()
+    z.columns = ["Usia", "Saldo", "Nominal transaksi", "Nominal ÷ saldo", "Durasi transaksi"]
+    st.plotly_chart(px.imshow(z, color_continuous_scale="RdBu_r", zmin=-2, zmax=2, text_auto=".1f", aspect="auto",
+                              title="Profil relatif tiap segmen (merah = di atas rata-rata segmen, biru = di bawah)"), width="stretch")
 
-    # ---- Bab 3
-    st.header("3️⃣ Sinyal yang paling mirip penipuan justru dibuang sebagai 'outlier'")
-    a, b = st.columns([2, 3])
-    ld = pd.DataFrame({"Percobaan login": list(S["login_dist"]), "Transaksi": list(S["login_dist"].values())})
-    ld["Dibuang?"] = ld["Percobaan login"].apply(lambda v: "Ya, semua" if int(v) > 1 else "Tidak")
-    a.plotly_chart(px.bar(ld, x="Percobaan login", y="Transaksi", color="Dibuang?", text="Transaksi", title="Distribusi LoginAttempts sebelum outlier dibuang",
-                          color_discrete_map={"Ya, semua": "#d62728", "Tidak": "#9aa5b1"}), width="stretch")
-    h = S["login_hl_vs_rest"]
-    with b:
-        st.markdown(f"Sebanyak **{S['login_removed']} transaksi** ({S['login_removed'] / S['n_dedup']:.1%}) memiliki 2–5 kali percobaan login. Dalam deteksi penipuan, inilah sinyal paling klasik. "
-                    f"Metode IQR menganggap semuanya outlier karena 95% transaksi hanya 1 kali login, sehingga **seluruhnya terbuang**. Setelah itu `LoginAttempts` bernilai 1 untuk semua baris dan tidak punya pengaruh apa pun pada model.")
-        st.markdown(f"Nominal transaksi kelompok ini hampir sama dengan yang lain ({h['true']['TransactionAmount']:.0f} vs {h['false']['TransactionAmount']:.0f}), "
-                    f"jadi mereka **tidak bisa dikenali dari nominalnya**. Hanya perilaku loginnya yang berbeda.")
-        st.markdown(f"Fitur lain juga tidak banyak membantu: **{S['pct_multi_device']:.0%}** akun memakai lebih dari satu perangkat dan IP, jadi hampir semua akun tampak 'mencurigakan'. "
-                    f"Seluruh `TransactionDate` jatuh dalam rentang beberapa menit (`{S['date_min'][:16]}` s.d. `{S['date_max'][11:16]}`), sehingga pola waktu tidak bisa dianalisis.")
-    st.warning("**Rekomendasi:** perlakukan `LoginAttempts` > 1 sebagai fitur biner (`login_gagal`), bukan sebagai outlier yang dibuang.")
+    st.header("3️⃣ Jumlah nasabah tidak sama dengan nilai nasabah")
+    v = pd.DataFrame({"Segmen": NAMES * 3, "Persen": list(share) + list(bal_share) + list(vol_share),
+                      "Ukuran": ["% nasabah"] * 4 + ["% total saldo"] * 4 + ["% volume transaksi"] * 4})
+    st.plotly_chart(px.bar(v, x="Segmen", y="Persen", color="Ukuran", barmode="group", text=v.Persen.map("{:.0f}%".format)), width="stretch")
+    st.markdown(f"**Senior Mapan** menyumbang {share['Senior Mapan']:.0f}% nasabah, {bal_share['Senior Mapan']:.0f}% saldo, dan {vol_share['Senior Mapan']:.0f}% volume. "
+                f"**Profesional Produktif** hanya {share['Profesional Produktif']:.0f}% nasabah tetapi memegang {bal_share['Profesional Produktif']:.0f}% saldo. "
+                f"Sebaliknya, **Pengeluaran Agresif** hanyalah {share['Pengeluaran Agresif']:.0f}% nasabah dengan saldo {bal_share['Pengeluaran Agresif']:.1f}%, namun menghasilkan **{vol_share['Pengeluaran Agresif']:.0f}%** dari seluruh volume transaksi.")
+    st.success("**Insight:** untuk simpanan dana, Senior Mapan dan Profesional Produktif adalah kunci. Untuk aktivitas transaksi, ada kelompok kecil yang sangat aktif.")
 
-    # ---- Bab 4
-    st.header("4️⃣ Dua cluster itu ternyata dua daftar kota, bukan dua tipe nasabah")
-    eff = pd.DataFrame({"Fitur": list(S["effect"]), "Selisih antar-cluster (satuan std)": [abs(v) for v in S["effect"].values()]}).sort_values("Selisih antar-cluster (satuan std)")
-    eff["Fitur"] = eff["Fitur"].replace({"Location": "Location ⚠️"})
-    a, b = st.columns([3, 2])
-    a.plotly_chart(px.bar(eff, x="Selisih antar-cluster (satuan std)", y="Fitur", orientation="h", title="Seberapa berbeda kedua cluster pada tiap fitur?"), width="stretch")
-    with b:
-        st.markdown(f"Selisih rata-rata antar-cluster pada `Location` adalah **{abs(S['effect']['Location']):.2f}** simpangan baku, sedangkan fitur lain paling besar hanya **{max(abs(v) for k_, v in S['effect'].items() if k_ != 'Location'):.2f}**. "
-                    f"Penyebabnya: kota di-*label-encode* menjadi 0–42 tanpa di-scale, sehingga rentang angkanya jauh melampaui fitur lain yang sudah di-scale (±1) dan mendominasi jarak K-Means.")
-        st.markdown(f"Buktinya: batas satu kode kota (≥ 22) mereproduksi label cluster dengan kecocokan **ARI = {S['ari_location']:.2f}** (sempurna). "
-                    f"Cluster 0 berisi kota **{S['cities']['0'][0]} … {S['cities']['0'][-1]}**, sedangkan cluster 1 berisi **{S['cities']['1'][0]} … {S['cities']['1'][-1]}**. Jadi cluster ini hanyalah pembagian kota **A–L vs M–W** secara alfabetis.")
-    with st.expander("Lihat daftar kota tiap cluster"):
-        x, y = st.columns(2)
-        x.markdown("**Cluster 0**: " + ", ".join(S["cities"]["0"]))
-        y.markdown("**Cluster 1**: " + ", ".join(S["cities"]["1"]))
-    cmp_ = pd.DataFrame(bc).T.rename(columns={"TransactionAmount": "Nominal", "CustomerAge": "Usia", "TransactionDuration": "Durasi (dtk)", "AccountBalance": "Saldo"})
-    cmp_.index = ["Cluster 0", "Cluster 1"]
-    st.dataframe(cmp_, width="stretch")
-    st.markdown(f"Dalam satuan aslinya, perbedaan kedua cluster sangat kecil: usia berbeda **{abs(bc['0']['CustomerAge'] - bc['1']['CustomerAge']):.1f} tahun**, durasi **{abs(bc['0']['TransactionDuration'] - bc['1']['TransactionDuration']):.1f} detik**, "
-                f"dan saldo hanya **{pct(bc['0']['AccountBalance'], bc['1']['AccountBalance']):.1f}%**. Label seperti *Stable & Careful* atau *Young & Active* tidak didukung data. Itu tafsir atas selisih yang pada dasarnya acak.")
+    st.header("4️⃣ Segmen Pengeluaran Agresif: kecil, tetapi paling aktif")
     a, b = st.columns(2)
-    a.plotly_chart(px.bar(x=["Semua fitur (notebook)", "Hanya fitur numerik"], y=[S["silhouette"], S["sil_numeric_k2"]], text=[f"{S['silhouette']:.2f}", f"{S['sil_numeric_k2']:.2f}"],
-                          labels={"x": "", "y": "Silhouette"}, title="Silhouette k=2: terlihat bagus karena kota, bukan karena perilaku"), width="stretch")
-    sk = pd.DataFrame({"k": list(S["sil_by_k"]), "silhouette": list(S["sil_by_k"].values())})
-    a2 = px.line(sk, x="k", y="silhouette", markers=True, title="Silhouette fitur numerik untuk k = 2…7 (datar)", range_y=[0, 0.6])
-    b.plotly_chart(a2, width="stretch")
-    st.info(f"Pada fitur perilaku saja, silhouette hanya **{S['sil_numeric_k2']:.2f}** dan tidak membaik untuk k mana pun. Artinya data ini **tidak punya gerombol alami** pada fitur numeriknya. Struktur yang nyata ada pada profesi (bab 2).")
+    a.plotly_chart(px.bar(prof.reset_index(), x="Segment", y="nominal", color="Segment", color_discrete_map=COL, title="Rata-rata nominal transaksi").update_layout(showlegend=False, xaxis_title=""), width="stretch")
+    b.plotly_chart(px.bar(prof.reset_index(), x="Segment", y="rasio", color="Segment", color_discrete_map=COL, title="Nominal ÷ saldo (median)").update_layout(showlegend=False, xaxis_title=""), width="stretch")
+    ag = prof.loc["Pengeluaran Agresif"]; ov = df.TransactionAmount.mean()
+    st.markdown(f"Rata-rata nominal mereka **{ag.nominal:,.0f}**, sekitar **{ag.nominal / ov:.1f}×** rata-rata seluruh nasabah ({ov:,.0f}). Nilai transaksi mediannya **{ag.rasio:.1f}×** saldo akun, "
+                f"sedangkan Senior Mapan hanya {prof.rasio['Senior Mapan']:.2f}×. Segmen ini adalah peluang pendapatan (volume tinggi) sekaligus kelompok yang perlu dipantau likuiditasnya.")
 
-    # ---- Bab 5
-    st.header("5️⃣ Akurasi 100% bukan prestasi model, melainkan kebocoran label")
-    ab = pd.DataFrame({"Skenario": list(S["ablation"]), "Akurasi": list(S["ablation"].values())})
-    a, b = st.columns([3, 2])
-    a.plotly_chart(px.bar(ab, x="Akurasi", y="Skenario", orientation="h", text=ab["Akurasi"].map("{:.0%}".format), range_x=[0, 1.1],
-                          title="Akurasi data uji dengan dan tanpa fitur Location").add_vline(x=0.5, line_dash="dot", annotation_text="tebakan acak"), width="stretch")
-    with b:
-        st.markdown(f"Label (`Target`) lahir dari fitur yang sama dengan yang diberikan ke classifier, sehingga Decision Tree, Random Forest, dan versi tuning semuanya mendapat **100%**. "
-                    f"Fitur `Location` menyumbang **{S['importance']['Location']:.1%}** dari seluruh importance Random Forest.")
-        st.markdown(f"Satu pohon dengan **satu pemisahan** pada kota sudah cukup untuk 100%. Begitu fitur kota dibuang, akurasi jatuh ke **{S['ablation']['Tanpa fitur Location (Random Forest)']:.0%}** (RF) dan **{S['ablation']['Tanpa fitur Location (Decision Tree)']:.0%}** (DT), setara tebakan acak.")
-    st.error("Model ini tidak mempelajari 'tipe nasabah'. Ia hanya menghafal aturan *kota A–L → cluster 0, M–W → cluster 1*. Jangan dipakai untuk keputusan bisnis.")
+    st.header("5️⃣ Segmen ditentukan fase hidup, bukan sekadar profesi")
+    ct = pd.crosstab(df.CustomerOccupation, df.Segment, normalize="index").reindex(columns=NAMES) * 100
+    cl = ct.reset_index().melt(id_vars="CustomerOccupation", var_name="Segmen", value_name="Persen")
+    st.plotly_chart(px.bar(cl, x="CustomerOccupation", y="Persen", color="Segmen", color_discrete_map=COL, category_orders={"Segmen": NAMES},
+                           labels={"CustomerOccupation": "Profesi"}, title="Sebaran segmen di dalam tiap profesi (%)"), width="stretch")
+    st.markdown(f"Satu profesi bisa tersebar di beberapa segmen. **Dokter**: {ct.loc['Doctor', 'Senior Mapan']:.0f}% ada di Senior Mapan dan {ct.loc['Doctor', 'Profesional Produktif']:.0f}% di Profesional Produktif, "
+                f"yang dibedakan oleh usia. **Mahasiswa**: {ct.loc['Student', 'Muda Berkembang']:.0f}% di Muda Berkembang dan {ct.loc['Student', 'Pengeluaran Agresif']:.0f}% di Pengeluaran Agresif, "
+                f"yang dibedakan oleh seberapa besar transaksinya terhadap saldo.")
 
-    # ---- Bab 6
-    st.header("6️⃣ Apa yang sebaiknya dilakukan selanjutnya")
-    st.markdown(f"""
-1. **Scale atau one-hot semua fitur kategorikal sebelum K-Means**, atau keluarkan `Location` dari clustering (43 kota terlalu banyak untuk satu fitur ordinal).
-2. **Pertahankan `LoginAttempts` > 1** sebagai fitur biner dan tandai transaksi tersebut untuk ditinjau. Itu {S['login_removed']} kasus yang tidak boleh dibuang.
-3. **Tambahkan fitur turunan:** rasio nominal ÷ saldo (cerita mahasiswa di bab 2) dan selisih hari dari transaksi sebelumnya.
-4. **Jangan melatih classifier pada label yang dibentuk dari fitur yang sama.** Gunakan label eksternal (misal status fraud) atau evaluasi stabilitas cluster dengan cara lain.
-5. Cek apakah segmentasi berbasis profesi lebih bermakna: K-Means k=4 pada fitur numerik hanya cocok dengan profesi pada ARI ≈ **{S['alt_k4_ari_occupation']:.2f}**. Itu lemah, jadi perlu fitur yang lebih kaya.
-""")
+    st.header("6️⃣ Pilihan kanal dan jenis transaksi relatif seragam")
+    chn = pd.crosstab(df.Segment, df.Channel, normalize="index").reindex(NAMES) * 100
+    login = df.groupby("Segment", observed=True).LoginBerulang.mean().reindex(NAMES) * 100
+    a, b = st.columns(2)
+    cm = chn.reset_index().melt(id_vars="Segment", var_name="Kanal", value_name="Persen")
+    a.plotly_chart(px.bar(cm, x="Segment", y="Persen", color="Kanal", barmode="stack", title="Pangsa kanal per segmen (%)").update_layout(xaxis_title=""), width="stretch")
+    b.plotly_chart(px.bar(x=NAMES, y=login.values, color=NAMES, color_discrete_map=COL, title="Transaksi dengan login berulang (>1x) per segmen (%)", labels={"x": "", "y": "%"}).update_layout(showlegend=False), width="stretch")
+    spread = (chn.max() - chn.min()).max()
+    st.markdown(f"Ketiga kanal (ATM, Cabang, Online) dipakai hampir merata di semua segmen; selisih terbesar antar-segmen hanya **{spread:.0f} poin persentase**. "
+                f"Transaksi dengan login berulang juga tersebar di kisaran **{login.min():.1f}–{login.max():.1f}%** pada tiap segmen. "
+                f"Artinya, **pembeda segmen adalah profil keuangan, bukan kanal**, sehingga strategi sebaiknya berbasis produk dan layanan, bukan hanya mendorong kanal tertentu.")
 
-# ======================= INFERENSI =======================
-def build_X(v):
-    row = {c: 0 for c in M["columns"]}
-    for n in ["TransactionAmount", "CustomerAge", "TransactionDuration", "LoginAttempts", "AccountBalance"]: row[n] = v[n]
-    e = M["age_edges"]; v["CustomerAgeGroup"] = "rendah" if v["CustomerAge"] <= e[1] else "sedang" if v["CustomerAge"] <= e[2] else "tinggi"
-    for col in ["TransactionType", "Location", "Channel", "CustomerOccupation", "CustomerAgeGroup"]:
-        key = f"{col}_{v[col]}"
-        if key in row: row[key] = 1
-    return pd.DataFrame([row])[M["columns"]]
+    st.header("7️⃣ Strategi yang disarankan per segmen")
+    st.caption("Rekomendasi ini adalah interpretasi bisnis atas profil data di atas, bukan hasil model.")
+    st.dataframe(pd.DataFrame({"Segmen": NAMES, "Ukuran": [f"{share[s]:.0f}%" for s in NAMES], "Saran strategi": [INFO[s][1] for s in NAMES]}), hide_index=True, width="stretch")
 
-
+# =============== PREDIKSI ===============
 with tab2:
-    st.subheader("Prediksi cluster untuk satu transaksi")
-    d = M["defaults"]
+    st.subheader("Masukkan profil nasabah, dapatkan segmennya")
     with st.form("f"):
         c = st.columns(3)
-        v = dict(
-            TransactionAmount=c[0].number_input("Nominal transaksi", 0.0, 5000.0, d["TransactionAmount"]),
-            AccountBalance=c[0].number_input("Saldo akun", 0.0, 50000.0, d["AccountBalance"]),
-            TransactionDuration=c[0].number_input("Durasi transaksi (detik)", 1.0, 600.0, d["TransactionDuration"]),
-            CustomerAge=c[1].number_input("Usia nasabah", 18, 90, int(d["CustomerAge"])),
-            CustomerOccupation=c[1].selectbox("Profesi", ["Doctor", "Engineer", "Retired", "Student"]),
-            LoginAttempts=c[1].number_input("Percobaan login", 1, 5, 1),
-            Location=c[2].selectbox("Kota", M["cities"], index=M["cities"].index("Houston")),
-            Channel=c[2].selectbox("Kanal", ["ATM", "Branch", "Online"]),
-            TransactionType=c[2].selectbox("Jenis", ["Debit", "Credit"]),
-        )
-        mname = st.selectbox("Model", list(M["models"]), index=1)
-        go_ = st.form_submit_button("Prediksi", type="primary")
-    if go_:
-        model = M["models"][mname]; X = build_X(dict(v))
-        pred = int(model.predict(X)[0]); pr = model.predict_proba(X)[0].max()
-        st.markdown(f"### Cluster **{pred}** · keyakinan {pr:.0%}")
-        if v["LoginAttempts"] > 1:
-            st.warning("Model dilatih hanya dengan `LoginAttempts = 1` (sisanya dibuang sebagai outlier), jadi nilai ini tidak berpengaruh pada prediksi.")
-        # uji sensitivitas: apa yang menggeser prediksi?
-        others = {"Nominal": ("TransactionAmount", [10, 100, 400, 900]), "Saldo": ("AccountBalance", [200, 2000, 8000, 15000]),
-                  "Usia": ("CustomerAge", [20, 35, 50, 70]), "Durasi": ("TransactionDuration", [20, 80, 160, 280]),
-                  "Profesi": ("CustomerOccupation", ["Doctor", "Engineer", "Retired", "Student"]), "Kanal": ("Channel", ["ATM", "Branch", "Online"])}
-        rows = []
-        for name, (col, vals) in others.items():
-            ps = [int(model.predict(build_X({**v, col: x}))[0]) for x in vals]
-            rows.append((f"Ubah {name}", f"{sum(p != pred for p in ps)} dari {len(ps)} skenario berubah"))
-        ps = [int(model.predict(build_X({**v, "Location": cty}))[0]) for cty in M["cities"]]
-        rows.append(("Ubah Kota", f"{sum(p != pred for p in ps)} dari {len(ps)} kota akan berubah"))
-        st.markdown("**Uji sensitivitas: faktor apa yang benar-benar menentukan prediksi ini?**")
-        st.table(pd.DataFrame(rows, columns=["Perubahan", "Efek pada cluster"]))
-        st.info(f"Kota **{v['Location']}** berada di cluster {pred}. Prediksi hanya berubah bila kota diganti, bukan karena nominal, saldo, usia, atau profesi. Ini bukti langsung dari bab 4 dan 5.")
+        age = c[0].number_input("Usia", 18, 90, 35); bal = c[0].number_input("Saldo akun", 50.0, 50000.0, 5000.0)
+        amt = c[1].number_input("Nominal transaksi", 1.0, 5000.0, 250.0); dur = c[1].number_input("Durasi transaksi (detik)", 1.0, 600.0, 120.0)
+        occ = c[2].selectbox("Profesi", OCC); ch = c[2].selectbox("Kanal", CH)
+        tt = c[0].selectbox("Jenis transaksi", TT); lg = c[1].number_input("Percobaan login", 1, 5, 1)
+        mname = c[2].selectbox("Model", list(MD["models"]))
+        ok = st.form_submit_button("Prediksi segmen", type="primary")
+    if ok:
+        row = pd.DataFrame([dict(CustomerAge=age, AccountBalance=bal, TransactionAmount=amt, TransactionDuration=dur, CustomerOccupation=occ,
+                                 Channel=ch, TransactionType=tt, LoginAttempts=lg)])
+        mdl = MD["models"][mname]; X = build_X(row)[MD["columns"]]
+        pr = mdl.predict_proba(X)[0]; sid = int(mdl.classes_[pr.argmax()]); seg = NAMES[sid]
+        direct = MD["idmap"][int(MD["km"].predict(MD["scaler"].transform(seg_features([age], [bal], [amt], MD["bounds"])))[0])]
+        st.markdown(f"### 🎯 Segmen: **{seg}** · keyakinan {pr.max():.0%}")
+        st.info(INFO[seg][0]); st.success("**Saran:** " + INFO[seg][1])
+        if direct != sid: st.caption(f"Catatan: penugasan langsung K-Means menempatkan profil ini di *{NAMES[direct]}* (profil berada dekat batas dua segmen).")
+        else: st.caption("Hasil ini sama dengan penugasan langsung K-Means (centroid terdekat).")
+        fig = px.scatter(df, x="CustomerAge", y="AccountBalance", color="Segment", log_y=True, opacity=.35, color_discrete_map=COL, category_orders={"Segment": NAMES},
+                         labels={"CustomerAge": "Usia", "AccountBalance": "Saldo (log)"}, title="Posisi nasabah ini di peta pasar")
+        fig.add_trace(go.Scatter(x=[age], y=[bal], mode="markers", marker=dict(symbol="star", size=20, color="red", line=dict(width=1, color="black")), name="Nasabah ini"))
+        st.plotly_chart(fig, width="stretch")
 
-# ======================= EVALUASI =======================
+# =============== MODEL ===============
 with tab3:
-    st.subheader("Evaluasi model klasifikasi (data uji)")
-    st.caption(f"Data hasil clustering: {S['split']['total']:,} baris → latih {S['split']['train']:,} / uji {S['split']['test']:,} (stratified, random_state=42). Fitur one-hot, sama seperti notebook.")
-    m = pd.DataFrame(S["metrics"]).T.rename(columns={"accuracy": "Akurasi", "precision": "Precision", "recall": "Recall", "f1": "F1"})
-    st.dataframe(m.style.format("{:.2%}"), width="stretch")
-    st.caption(f"Parameter terbaik GridSearchCV: {S['tuned_params']}")
-    imp = pd.DataFrame({"Fitur": list(S["importance"]), "Importance": list(S["importance"].values())}).sort_values("Importance")
-    st.plotly_chart(px.bar(imp, x="Importance", y="Fitur", orientation="h", title="Importance Random Forest (dijumlah per fitur asal)"), width="stretch")
-    st.warning("Skor sempurna di atas adalah tanda **kebocoran label**, bukan kualitas model. Lihat bab 5 di tab *Cerita Data*.")
+    st.subheader("Bagaimana segmen dibuat")
+    st.markdown(f"""
+1. **Pembersihan:** {META['n_raw']:,} baris → hapus duplikat → {META['n_dedup']:,} → hapus baris yang kosong pada fitur analisis → **{META['n_clean']:,} profil**. ID, IP, dan tanggal tidak dipakai. Outlier **tidak dibuang** (nilai ekstrem di-winsorize 1–99% dan di-log), dan `LoginAttempts` > 1 tetap dipertahankan.
+2. **Fitur clustering:** usia, log(saldo), dan log(nominal ÷ saldo), semuanya di-scale. Kota tidak dipakai (43 nilai tanpa urutan makna).
+3. **K-Means, k = 4:** silhouette **{META['silhouette']:.2f}**, kestabilan terhadap resampling (ARI) **{META['stability']['4']:.2f}**. Segmen diberi nama otomatis dari profilnya.
+4. **Klasifikasi** (Random Forest, Decision Tree, Decision Tree tuning) dilatih pada fitur nasabah untuk menebak segmen nasabah baru.
+""")
+    ks = pd.DataFrame({"k": list(map(int, META["k_sweep"])), "Silhouette": list(META["k_sweep"].values())})
+    st.plotly_chart(px.line(ks, x="k", y="Silhouette", markers=True, title="Silhouette untuk berbagai jumlah segmen").add_vline(x=4, line_dash="dot", annotation_text="dipilih"), width="stretch")
+    st.caption(f"k = 4 dipilih karena paling bermakna secara bisnis dan stabil (ARI {META['stability']['4']:.2f} vs {META['stability']['3']:.2f} untuk k = 3), walaupun silhouette k kecil lebih tinggi.")
+    st.subheader("Evaluasi klasifikasi (data uji)")
+    m = pd.DataFrame(META["metrics"]).T.rename(columns={"accuracy": "Akurasi", "f1": "F1 (macro)"})
+    st.dataframe(m.style.format("{:.1%}"), width="stretch")
+    st.caption(f"Latih {META['split']['train']:,} / uji {META['split']['test']:,} (stratified). Cross-validation 5-fold Random Forest: {META['cv_rf']:.1%}. Parameter tuning: {META['tuned_params']}")
+    a, b = st.columns(2)
+    a.plotly_chart(px.imshow(META["confusion"], x=NAMES, y=NAMES, text_auto=True, color_continuous_scale="Blues", labels=dict(x="Prediksi", y="Aktual"), title="Confusion matrix (Random Forest)"), width="stretch")
+    im = pd.DataFrame({"Fitur": list(META["importance"]), "Importance": list(META["importance"].values())}).sort_values("Importance")
+    b.plotly_chart(px.bar(im, x="Importance", y="Fitur", orientation="h", title="Fitur paling menentukan segmen"), width="stretch")
+    st.caption("Segmen dibentuk dari usia, saldo, dan rasio nominal, sehingga classifier wajar menebaknya dengan akurat. Fungsinya sebagai penebak cepat untuk nasabah baru, bukan bukti bahwa segmen itu 'benar'.")

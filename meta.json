@@ -1,0 +1,86 @@
+{
+ "n_raw": 2537,
+ "n_dedup": 2516,
+ "n_clean": 2321,
+ "k_sweep": {
+  "2": 0.4901651854611277,
+  "3": 0.45947202901491757,
+  "4": 0.4133663933112335,
+  "5": 0.4176127949714649,
+  "6": 0.3994186207657801,
+  "7": 0.36538105725321635
+ },
+ "stability": {
+  "3": 0.9254161587443572,
+  "4": 0.9742587901086047,
+  "5": 0.9791394746454601
+ },
+ "silhouette": 0.4133663933112335,
+ "names": [
+  "Profesional Produktif",
+  "Senior Mapan",
+  "Muda Berkembang",
+  "Pengeluaran Agresif"
+ ],
+ "metrics": {
+  "Random Forest": {
+   "accuracy": 0.9720430107526882,
+   "f1": 0.9640524332663906
+  },
+  "Decision Tree": {
+   "accuracy": 0.9698924731182795,
+   "f1": 0.9528135554268542
+  },
+  "Decision Tree (Tuned)": {
+   "accuracy": 0.9655913978494624,
+   "f1": 0.9493999824721857
+  }
+ },
+ "cv_rf": 0.9750092695587689,
+ "tuned_params": {
+  "criterion": "entropy",
+  "max_depth": 10,
+  "min_samples_split": 2
+ },
+ "split": {
+  "train": 1856,
+  "test": 465
+ },
+ "confusion": [
+  [
+   131,
+   3,
+   0,
+   0
+  ],
+  [
+   3,
+   186,
+   1,
+   2
+  ],
+  [
+   1,
+   1,
+   108,
+   0
+  ],
+  [
+   0,
+   0,
+   2,
+   27
+  ]
+ ],
+ "importance": {
+  "Usia": 0.3645,
+  "Saldo": 0.2262,
+  "Profesi": 0.1924,
+  "Rasio": 0.1423,
+  "Nominal": 0.0413,
+  "Durasi": 0.0208,
+  "Kanal": 0.0071,
+  "Jenis": 0.0042,
+  "LoginBerulang": 0.0013
+ }
+}
