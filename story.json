@@ -1,0 +1,302 @@
+{
+ "n_raw": 2537,
+ "n_dropna": 2156,
+ "n_dedup": 2135,
+ "null_rows": 381,
+ "dup_rows": 21,
+ "date_min": "2024-11-04 08:06:23",
+ "date_max": "2024-11-04 08:12:23",
+ "gap_days": 488.0496487119438,
+ "n_accounts": 493,
+ "n_merchants": 100,
+ "pct_multi_device": 0.9188640973630832,
+ "pct_multi_ip": 0.9188640973630832,
+ "n_final": 1945,
+ "login_removed": 101,
+ "n_outlier": 190,
+ "login_dist": {
+  "1": 2034,
+  "2": 24,
+  "3": 27,
+  "4": 27,
+  "5": 23
+ },
+ "silhouette": 0.572159925838334,
+ "cluster_sizes": [
+  980,
+  965
+ ],
+ "effect": {
+  "TransactionAmount": 0.011909845747273723,
+  "TransactionType": -0.027982516714918883,
+  "Location": 1.7283060718203094,
+  "Channel": -0.008106985271195258,
+  "CustomerAge": -0.04112578555241217,
+  "CustomerOccupation": 0.0819765982302692,
+  "TransactionDuration": -0.05416385770465157,
+  "LoginAttempts": 0.0,
+  "AccountBalance": -0.021336671858878303,
+  "CustomerAgeGroup": -0.027916926743541678
+ },
+ "cities": {
+  "0": [
+   "Albuquerque",
+   "Atlanta",
+   "Austin",
+   "Baltimore",
+   "Boston",
+   "Charlotte",
+   "Chicago",
+   "Colorado Springs",
+   "Columbus",
+   "Dallas",
+   "Denver",
+   "Detroit",
+   "El Paso",
+   "Fort Worth",
+   "Fresno",
+   "Houston",
+   "Indianapolis",
+   "Jacksonville",
+   "Kansas City",
+   "Las Vegas",
+   "Los Angeles",
+   "Louisville"
+  ],
+  "1": [
+   "Memphis",
+   "Mesa",
+   "Miami",
+   "Milwaukee",
+   "Nashville",
+   "New York",
+   "Oklahoma City",
+   "Omaha",
+   "Philadelphia",
+   "Phoenix",
+   "Portland",
+   "Raleigh",
+   "Sacramento",
+   "San Antonio",
+   "San Diego",
+   "San Francisco",
+   "San Jose",
+   "Seattle",
+   "Tucson",
+   "Virginia Beach",
+   "Washington"
+  ]
+ },
+ "city_overlap": [],
+ "ari_location": 1.0,
+ "sil_numeric_k2": 0.24210821363895818,
+ "sil_by_k": {
+  "2": 0.24210821363895818,
+  "3": 0.2438782512383081,
+  "4": 0.23844100147292258,
+  "5": 0.2516741271506195,
+  "6": 0.23223917926848806,
+  "7": 0.23759439908969548
+ },
+ "by_cluster": {
+  "0": {
+   "TransactionAmount": 255.55,
+   "CustomerAge": 45.06,
+   "TransactionDuration": 121.12,
+   "AccountBalance": 5142.17
+  },
+  "1": {
+   "TransactionAmount": 258.15,
+   "CustomerAge": 44.33,
+   "TransactionDuration": 117.3,
+   "AccountBalance": 5058.81
+  }
+ },
+ "occ_by_cluster": {
+  "0": {
+   "Doctor": 27.6,
+   "Engineer": 24.2,
+   "Retired": 23.3,
+   "Student": 25.0
+  },
+  "1": {
+   "Doctor": 23.9,
+   "Engineer": 24.6,
+   "Retired": 24.0,
+   "Student": 27.5
+  }
+ },
+ "channel_by_cluster": {
+  "0": {
+   "ATM": 33.1,
+   "Branch": 35.8,
+   "Online": 31.1
+  },
+  "1": {
+   "ATM": 33.9,
+   "Branch": 34.8,
+   "Online": 31.3
+  }
+ },
+ "occupation": [
+  {
+   "CustomerOccupation": "Doctor",
+   "n": 501,
+   "umur": 49.607,
+   "saldo": 8958.776,
+   "nominal": 246.17,
+   "rasio_median": 0.024,
+   "durasi": 118.008
+  },
+  {
+   "CustomerOccupation": "Engineer",
+   "n": 474,
+   "umur": 42.734,
+   "saldo": 5447.529,
+   "nominal": 252.927,
+   "rasio_median": 0.04,
+   "durasi": 119.58
+  },
+  {
+   "CustomerOccupation": "Retired",
+   "n": 460,
+   "umur": 65.204,
+   "saldo": 4513.817,
+   "nominal": 255.803,
+   "rasio_median": 0.046,
+   "durasi": 117.28
+  },
+  {
+   "CustomerOccupation": "Student",
+   "n": 510,
+   "umur": 23.186,
+   "saldo": 1518.133,
+   "nominal": 271.887,
+   "rasio_median": 0.186,
+   "durasi": 121.845
+  }
+ ],
+ "channel": {
+  "Branch": 687,
+  "ATM": 651,
+  "Online": 607
+ },
+ "type": {
+  "Debit": 1501,
+  "Credit": 444
+ },
+ "amount_hist": [
+  286,
+  254,
+  208,
+  163,
+  153,
+  135,
+  120,
+  115,
+  78,
+  82,
+  58,
+  55,
+  36,
+  35,
+  39,
+  22,
+  35,
+  27,
+  21,
+  23
+ ],
+ "amount_edges": [
+  0.3,
+  45.4,
+  90.6,
+  135.7,
+  180.8,
+  226.0,
+  271.1,
+  316.3,
+  361.4,
+  406.6,
+  451.7,
+  496.9,
+  542.0,
+  587.2,
+  632.3,
+  677.5,
+  722.6,
+  767.8,
+  812.9,
+  858.0,
+  903.2
+ ],
+ "age_edges": [
+  18.0,
+  32.0,
+  55.0,
+  80.0
+ ],
+ "alt_k4_ari_occupation": 0.21308551155253708,
+ "login_hl_vs_rest": {
+  "false": {
+   "TransactionAmount": 298.2,
+   "TransactionDuration": 119.5,
+   "AccountBalance": 5066.9
+  },
+  "true": {
+   "TransactionAmount": 296.0,
+   "TransactionDuration": 132.7,
+   "AccountBalance": 5630.5
+  }
+ },
+ "metrics": {
+  "Decision Tree": {
+   "accuracy": 1.0,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0
+  },
+  "Random Forest": {
+   "accuracy": 1.0,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0
+  },
+  "Decision Tree (Tuned)": {
+   "accuracy": 1.0,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0
+  }
+ },
+ "tuned_params": {
+  "criterion": "gini",
+  "max_depth": null,
+  "min_samples_split": 2
+ },
+ "split": {
+  "total": 1945,
+  "train": 1556,
+  "test": 389
+ },
+ "n_location_cols": 42,
+ "ablation": {
+  "Semua fitur (notebook)": 1.0,
+  "Hanya fitur Location": 1.0,
+  "Tanpa fitur Location (Random Forest)": 0.5398457583547558,
+  "Tanpa fitur Location (Decision Tree)": 0.4781491002570694
+ },
+ "importance": {
+  "Location": 0.925,
+  "AccountBalance": 0.0165,
+  "TransactionDuration": 0.0164,
+  "TransactionAmount": 0.0161,
+  "CustomerAge": 0.0131,
+  "Channel": 0.0043,
+  "CustomerOccupation": 0.0039,
+  "CustomerAgeGroup": 0.0027,
+  "TransactionType": 0.0021,
+  "LoginAttempts": 0.0
+ },
+ "depth1_dt_acc": 1.0
+}
